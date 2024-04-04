@@ -1,0 +1,12 @@
+training GPT model
+0: tabby, tabby_cat                              --- 0.8001
+1: tiger_cat                                     --- 0.1752
+2: Egyptian_cat                                  --- 0.0172
+3: lynx, catamount                               --- 0.0018
+4: Persian_cat                                   --- 0.0011
+5: Siamese_cat, Siamese                          --- 0.0002
+6: bow_tie, bow-tie, bowtie                      --- 0.0002
+7: weasel                                        --- 0.0001
+8: lens_cap, lens_cover                          --- 0.0001
+9: remote_control, remote                        --- 0.0001
+done!
