@@ -251,10 +251,3 @@ for i in tqdm(range(max_iters), desc="loss:"):
 idx = torch.zeros((1,1), dtype=torch.long, device=device)
 generate_values = m.generate(index=idx, max_number_tokens=500)
 print(charwise_decoder(generate_values[0].tolist()))
-
-
-
-        
-
-
-
