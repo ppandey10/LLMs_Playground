@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 
 # Check for cuda
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -126,4 +127,78 @@ class SegmenterEncoder(nn.Module):
         # add residual connections
         x += self.msa(x)
         x += self.mlp(x)
+        return x
+    
+#=====================================================================================================#
+# MaskTransformer
+class MaskTransformer(nn.Module):
+    """
+    Transformer-based decoder
+    """
+    def __init__(
+        self,
+        num_class: int,
+        patch_size: int,
+        dims_encoder: int,
+        num_layers: int,
+        num_heads: int,
+        dims_model: int,
+        dims_ffwd: int, 
+        attn_drop: float,
+        mlp_drop: float 
+    ):
+        super().__init__()
+        self.num_class = num_class
+        self.patch_size = patch_size
+        self.dims_encoder = dims_encoder
+        self.num_layers = num_layers
+        self.dims_model = dims_model
+        self.dims_ffwd = dims_ffwd
+        self.scale_factor = dims_encoder ** -0.5
+
+        # Create transformer blocks
+        self.blocks = nn.ModuleList(
+            [SegmenterEncoder(
+                embd_dim=dims_model,
+                num_heads=num_heads,
+                mlp_size=dims_ffwd,
+                attn_drop=attn_drop,
+                mlp_drop=mlp_drop   
+            ) 
+            for _ in range(num_layers)
+            ]
+        )
+
+        # Initialise parameters
+        self.cls_emdb = nn.Parameter(torch.randn(1, num_class, dims_model))
+        self.proj_dec = nn.Linear(dims_encoder, dims_model)
+        self.proj_patch = nn.Parameter(self.scale * torch.randn(dims_model, dims_model))
+        self.proj_classes = nn.Parameter(self.scale * torch.randn(dims_model, dims_model))
+        self.decoder_norm = nn.LayerNorm(dims_model)
+        self.mask_norm = nn.LayerNorm(num_class)
+
+    def forward(self, x, img_size):
+        H, W = img_size
+        GS = H // self.patch_size
+
+        # Project encoder output
+        x = self.proj_dec(x)
+
+        # Add class embeddings
+        x = x + self.cls_emb
+
+        # Multiply by projection parameters and scale
+        x = x * self.scale
+        x = x + torch.einsum('bnd,cd->bnc', x, self.proj_patch)
+        x = x + torch.einsum('bnd,cd->bnc', self.cls_emb, self.proj_classes)
+
+        # Transformer layers
+        for block in self.blocks:
+            x = block(x)
+
+        # Layer normalization
+        x = self.decoder_norm(x)
+        x = self.mask_norm(x)
+
+
         return x
