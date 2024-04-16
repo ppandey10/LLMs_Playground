@@ -133,7 +133,7 @@ class SegmenterEncoder(nn.Module):
 # MaskTransformer
 class MaskTransformer(nn.Module):
     """
-    Transformer-based decoder
+    Transformer-based decoder + 
     """
     def __init__(
         self,
@@ -185,16 +185,17 @@ class MaskTransformer(nn.Module):
         x = self.proj_dec(x)
 
         # Add class embeddings
-        x = x + self.cls_emb
+        cls_emb = self.cls_emb.expand(x.size(0), -1, -1)
+        x = torch.cat((x, cls_emb), 1)
+        # Transformer layers
+        for block in self.blocks:
+            x = block(x)
+        x = self.decoder_norm(x)
 
         # Multiply by projection parameters and scale
         x = x * self.scale
         x = x + torch.einsum('bnd,cd->bnc', x, self.proj_patch)
         x = x + torch.einsum('bnd,cd->bnc', self.cls_emb, self.proj_classes)
-
-        # Transformer layers
-        for block in self.blocks:
-            x = block(x)
 
         # Layer normalization
         x = self.decoder_norm(x)
