@@ -211,7 +211,7 @@ class MaskTransformer(nn.Module):
 # SEGMENTER
 class SEGMENTER(nn.Module):
     """
-    Performs semantic segmentation based on encoder-decoder. 
+    A transformer-based architecture to predict class-specific segmentation masks from input images.
     """
     def __init__(self, encoder, decoder, n_cls):
         super().__init__()
