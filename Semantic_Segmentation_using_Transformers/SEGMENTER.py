@@ -170,10 +170,10 @@ class MaskTransformer(nn.Module):
         )
 
         # Initialise parameters
-        self.cls_emdb = nn.Parameter(torch.randn(1, num_class, dims_model))
+        self.cls_embd = nn.Parameter(torch.randn(1, num_class, dims_model))
         self.proj_dec = nn.Linear(dims_encoder, dims_model)
-        self.proj_patch = nn.Parameter(self.scale * torch.randn(dims_model, dims_model))
-        self.proj_classes = nn.Parameter(self.scale * torch.randn(dims_model, dims_model))
+        self.proj_patch = nn.Parameter(self.scale_factor * torch.randn(dims_model, dims_model))
+        self.proj_classes = nn.Parameter(self.scale_factor * torch.randn(dims_model, dims_model))
         self.decoder_norm = nn.LayerNorm(dims_model)
         self.mask_norm = nn.LayerNorm(num_class)
 
@@ -185,21 +185,47 @@ class MaskTransformer(nn.Module):
         x = self.proj_dec(x)
 
         # Add class embeddings
-        cls_emb = self.cls_emb.expand(x.size(0), -1, -1)
-        x = torch.cat((x, cls_emb), 1)
+        cls_embd = self.cls_embd.expand(x.size(0), -1, -1)
+        x = torch.cat((x, cls_embd), 1)
         # Transformer layers
         for block in self.blocks:
             x = block(x)
         x = self.decoder_norm(x)
 
-        # Multiply by projection parameters and scale
-        x = x * self.scale
-        x = x + torch.einsum('bnd,cd->bnc', x, self.proj_patch)
-        x = x + torch.einsum('bnd,cd->bnc', self.cls_emb, self.proj_classes)
+        patches, cls_seg_feat = x[:, : -self.num_class], x[:, -self.num_class :]
 
-        # Layer normalization
-        x = self.decoder_norm(x)
-        x = self.mask_norm(x)
+        patches = patches @ self.proj_patch
+        cls_seg_feat = cls_seg_feat @ self.proj_classes
 
+        patches = patches / patches.norm(dim=-1, keepdim=True)
+        cls_seg_feat = cls_seg_feat / cls_seg_feat.norm(dim=-1, keepdim=True)
 
-        return x
+        masks = patches @ cls_seg_feat.transpose(1, 2)
+        masks = self.mask_norm(masks)
+
+        masks = rearrange(masks, "b (h w) n -> b n h w", h=int(GS))
+
+        return masks
+    
+#==============================================================================================#
+# SEGMENTER
+class SEGMENTER(nn.Module):
+    """
+    Performs semantic segmentation based on encoder-decoder. 
+    """
+    def __init__(self, encoder, decoder, n_cls):
+        super().__init__()
+        self.n_cls = n_cls
+        self.patch_size = encoder.patch_size
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def forward(self, img):
+        H, W = img.size(2), img.size(3)
+        # encoding
+        x = self.encoder(img)
+        # decoding
+        masks = self.decoder(x, (H, W))
+        masks = F.interpolate(masks, size=(H, W), mode="bilinear")
+        
+        return masks
